@@ -1,4 +1,6 @@
 
+
+
 find_program(PROTOC protoc)
 if(NOT PROTOC)
 	message(FATAL_ERROR "Could not find protoc")
