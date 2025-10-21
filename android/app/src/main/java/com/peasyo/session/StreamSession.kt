@@ -373,14 +373,14 @@ class StreamSession(
 									val INPUT_MAX = 256
 									val OUTPUT_MAX = 32767
 
-									val left = (event.left * OUTPUT_MAX / INPUT_MAX).coerceAtMost(OUTPUT_MAX)
-									val right = (event.right * OUTPUT_MAX / INPUT_MAX).coerceAtMost(OUTPUT_MAX)
+									val left_inner = (event.left * OUTPUT_MAX / INPUT_MAX).coerceAtMost(OUTPUT_MAX)
+									val right_inner = (event.right * OUTPUT_MAX / INPUT_MAX).coerceAtMost(OUTPUT_MAX)
 
-									getMainActivity()?.handleRumble(left.toShort(), right.toShort())
+									getMainActivity()?.handleRumble(left_inner.toShort(), right_inner.toShort())
 
 									vibrateScope.launch {
 										vibrateMutex.withLock {
-											getMainActivity()?.handleRumble(left.toShort(), right.toShort())
+											getMainActivity()?.handleRumble(left_inner.toShort(), right_inner.toShort())
 											delay(30)
 											getMainActivity()?.handleRumble(0, 0)
 										}

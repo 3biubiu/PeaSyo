@@ -82,7 +82,15 @@ if(CHIAKI_USE_SYSTEM_NANOPB)
 		set(CHIAKI_USE_SYSTEM_NANOPB ON)
 	endif()
 endif()
+# 使用 Google 的 protoc.exe（自备）
+set(Protobuf_PROTOC_EXECUTABLE "C:/tools/protoc/bin/protoc.exe" CACHE FILEPATH "Path to protoc.exe" FORCE)
 
+# 强制 nanopb 使用预编译生成器，禁用 Python 包装器
+set(NANOPB_PROTOC "C:/tools/protoc/bin/protoc.exe" CACHE FILEPATH "" FORCE)
+set(NANOPB_GENERATOR "D:/web/PeaSyo/third-party/nanopb/generator-bin/nanopb_generator.exe" CACHE FILEPATH "" FORCE)
+set(NANOPB_PYTHON "" CACHE STRING "" FORCE)
+# 绝招：把 generator-bin 放到 PATH 最前面，让任何按名字寻找的工具都先命中预编译插件
+set(ENV{PATH} "D:/web/PeaSyo/third-party/nanopb/generator-bin;$ENV{PATH}")
 add_subdirectory(third-party)
 
 add_definitions(-DCHIAKI_VERSION_MAJOR=${CHIAKI_VERSION_MAJOR} -DCHIAKI_VERSION_MINOR=${CHIAKI_VERSION_MINOR} -DCHIAKI_VERSION_PATCH=${CHIAKI_VERSION_PATCH} -DCHIAKI_VERSION=\"${CHIAKI_VERSION}\")
