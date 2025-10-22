@@ -1,0 +1,9 @@
+prefix=D:/web/PeaSyo/android/app/.cxx/Debug/5n3h5y61/arm64-v8a/openssl-install-prefix
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include 
+
+Name: OpenSSL
+Description: Secure Sockets Layer and cryptography libraries and tools
+Version: 3.5.3
+Requires: libssl libcrypto
