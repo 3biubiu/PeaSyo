@@ -23,7 +23,9 @@ DerivedData
 *.ipa
 *.xcuserstate
 ios/.xcode.env.local
-
+third-party/nanopb/generator-bin/
+third-party/nanopb/generator/protoc.disabled/
+third-party/openssl-3.5.3/
 # Android/IntelliJ
 #
 build/
