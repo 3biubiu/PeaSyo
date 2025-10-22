@@ -80,6 +80,7 @@ class StreamSession(
 	private val DSCONTROLLER_NAME = "DualSenseController"
 
 	private var isRuningVib = false
+	private val maxOperatingRate = connectInfo.maxOperatingRate // 从 connectInfo 获取
 
 	private data class AudioHapticsState(
 		var lastLeft: Int = 0,
@@ -190,15 +191,6 @@ class StreamSession(
 			session.start()
 			val surface = surface
 			if(surface != null) {
-				val sharedPreferences = reactContext?.getSharedPreferences("settings", Context.MODE_PRIVATE)
-				val maxOperatingRateStr = sharedPreferences?.getString("maxOperatingRate", "0x7FFF")
-				val maxOperatingRate = maxOperatingRateStr?.let {
-					if (it.startsWith("0x")) {
-						it.substring(2).toIntOrNull(16) ?: 0x7FFF
-					} else {
-						it.toIntOrNull() ?: 0x7FFF
-					}
-				} ?: 0x7FFF
 				session.setSurface(surface, maxOperatingRate)
 			}
 			this.session = session
@@ -468,15 +460,6 @@ class StreamSession(
 			val currentSurface = surfaceView.holder.surface
 			if (currentSurface != null && currentSurface.isValid) {
 				this@StreamSession.surface = currentSurface
-				val sharedPreferences = reactContext?.getSharedPreferences("settings", Context.MODE_PRIVATE)
-				val maxOperatingRateStr = sharedPreferences?.getString("maxOperatingRate", "0x7FFF")
-				val maxOperatingRate = maxOperatingRateStr?.let {
-					if (it.startsWith("0x")) {
-						it.substring(2).toIntOrNull(16) ?: 0x7FFF
-					} else {
-						it.toIntOrNull() ?: 0x7FFF
-					}
-				} ?: 0x7FFF
 				session?.setSurface(currentSurface, maxOperatingRate)
 			}
 		}
@@ -489,15 +472,6 @@ class StreamSession(
 				val surface = holder.surface
 				Log.d("StreamView", "surfaceChanged:" + surface)
 				this@StreamSession.surface = surface
-				val sharedPreferences = reactContext?.getSharedPreferences("settings", Context.MODE_PRIVATE)
-				val maxOperatingRateStr = sharedPreferences?.getString("maxOperatingRate", "0x7FFF")
-				val maxOperatingRate = maxOperatingRateStr?.let {
-					if (it.startsWith("0x")) {
-						it.substring(2).toIntOrNull(16) ?: 0x7FFF
-					} else {
-						it.toIntOrNull() ?: 0x7FFF
-					}
-				} ?: 0x7FFF
 				session?.setSurface(surface, maxOperatingRate)
 			}
 
@@ -515,16 +489,6 @@ class StreamSession(
 		Log.d("StreamView", "handleSessionSetSurface")
 		surfaceTexture = surface
 		this@StreamSession.surface = Surface(surfaceTexture)
-		// 在 onSurfaceTextureAvailable() 方法里面取得 SurfaceTexture 并包装成一个 Surface 再调用MediaPlayer的 setSurface 方法完成播放器的显示工作
-		val sharedPreferences = reactContext?.getSharedPreferences("settings", Context.MODE_PRIVATE)
-		val maxOperatingRateStr = sharedPreferences?.getString("maxOperatingRate", "0x7FFF")
-		val maxOperatingRate = maxOperatingRateStr?.let {
-			if (it.startsWith("0x")) {
-				it.substring(2).toIntOrNull(16) ?: 0x7FFF
-			} else {
-				it.toIntOrNull() ?: 0x7FFF
-			}
-		} ?: 0x7FFF
 		session?.setSurface(Surface(surface), maxOperatingRate)
 	}
 
