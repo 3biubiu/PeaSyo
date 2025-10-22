@@ -80,7 +80,7 @@ class StreamSession(
 	private val DSCONTROLLER_NAME = "DualSenseController"
 
 	private var isRuningVib = false
-	private val maxOperatingRate = connectInfo.maxOperatingRate // 从 connectInfo 获取
+	private val maxOperatingRate = connectInfo.videoProfile.maxOperatingRate // 从 connectInfo 获取
 
 	private data class AudioHapticsState(
 		var lastLeft: Int = 0,
