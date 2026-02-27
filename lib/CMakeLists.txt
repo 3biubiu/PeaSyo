@@ -124,6 +124,7 @@ target_link_libraries(chiaki-lib lib_zlib)
 add_library(lib_openssl STATIC IMPORTED)
 set_target_properties(lib_openssl PROPERTIES IMPORTED_LOCATION
         ${CMAKE_SOURCE_DIR}/third-party/openssl/${ANDROID_ABI}/lib/libssl.a)
+target_include_directories(chiaki-lib PRIVATE ${CMAKE_SOURCE_DIR}/third-party/openssl/${ANDROID_ABI}/include)
 target_link_libraries(chiaki-lib lib_openssl)
 
 # CURL
@@ -149,7 +150,9 @@ target_link_libraries(chiaki-lib json-c)
 target_link_libraries(chiaki-lib Miniupnpc::miniupnpc)
 target_include_directories(chiaki-lib PRIVATE ${CMAKE_SOURCE_DIR}/third-party/miniupnpc)
 
-target_link_libraries(chiaki-lib OpenSSL_Crypto)
+if(TARGET OpenSSL_Crypto)
+	target_link_libraries(chiaki-lib OpenSSL_Crypto)
+endif()
 
 target_link_libraries(chiaki-lib Nanopb::nanopb)
 target_link_libraries(chiaki-lib Jerasure::Jerasure)

@@ -72,6 +72,33 @@ if(CHIAKI_USE_SYSTEM_CURL)
 endif()
 
 find_package(PythonInterp 3 REQUIRED) # Make sure nanopb doesn't find Python 2.7 because Python 2 should just die.
+if(CMAKE_HOST_WIN32)
+	set(PYTHON_CANDIDATES "${PYTHON_EXECUTABLE}")
+	file(GLOB LOCAL_PYTHONS "$ENV{LOCALAPPDATA}/Programs/Python/*/python.exe")
+	list(APPEND PYTHON_CANDIDATES ${LOCAL_PYTHONS})
+	list(REMOVE_DUPLICATES PYTHON_CANDIDATES)
+
+	unset(PYTHON_WITH_PROTOBUF)
+	foreach(PY_CANDIDATE IN LISTS PYTHON_CANDIDATES)
+		if(EXISTS "${PY_CANDIDATE}")
+			execute_process(
+				COMMAND "${PY_CANDIDATE}" -c "import google.protobuf"
+				RESULT_VARIABLE PY_PROTOBUF_OK
+				OUTPUT_QUIET
+				ERROR_QUIET)
+			if(PY_PROTOBUF_OK EQUAL 0)
+				set(PYTHON_WITH_PROTOBUF "${PY_CANDIDATE}")
+				break()
+			endif()
+		endif()
+	endforeach()
+
+	if(PYTHON_WITH_PROTOBUF)
+		set(PYTHON_EXECUTABLE "${PYTHON_WITH_PROTOBUF}" CACHE FILEPATH "Python executable for nanopb generator" FORCE)
+	else()
+		message(WARNING "No Python with google.protobuf found; nanopb generation may fail")
+	endif()
+endif()
 
 if(CHIAKI_USE_SYSTEM_NANOPB)
 	if(CHIAKI_USE_SYSTEM_NANOPB STREQUAL AUTO)
@@ -87,7 +114,9 @@ add_subdirectory(third-party)
 
 add_definitions(-DCHIAKI_VERSION_MAJOR=${CHIAKI_VERSION_MAJOR} -DCHIAKI_VERSION_MINOR=${CHIAKI_VERSION_MINOR} -DCHIAKI_VERSION_PATCH=${CHIAKI_VERSION_PATCH} -DCHIAKI_VERSION=\"${CHIAKI_VERSION}\")
 
-include(OpenSSLExternalProject)
+if(CHIAKI_LIB_OPENSSL_EXTERNAL_PROJECT)
+	include(OpenSSLExternalProject)
+endif()
 
 # 这里声明入口文件lib
 add_subdirectory(lib)
