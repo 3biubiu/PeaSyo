@@ -256,6 +256,16 @@ export default {
     Share: 'Share',
     ImportDesc:
       'If you have a PeaSyo configuration, you can import the configuration file directly without re-registering hosts.',
+    // Performance panel
+    RTT: 'RTT',
+    WD: 'WD',
+    BT: 'BT',
+    PL: 'PL',
+    DT: 'DT',
+    FL: 'FL',
+    'Vibration Type': 'Vibration Type',
+    'Haptic Feedback': 'Haptic Feedback',
+    'Traditional Rumble': 'Traditional Rumble',
     DS_test_title: 'DualSense 5 Controller Test',
     DS_test_desc:
       'To test the DualSense 5, ensure that the Android overlay driver is enabled(Settings - Override native gamepad support - Enable) and the DualSense 5 controller is connected via a wired connection.',

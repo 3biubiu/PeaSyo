@@ -21,6 +21,11 @@ public class UsbRumbleManager extends ReactContextBaseJavaModule {
     private static boolean bindUsbDevice = false;
     private static boolean hasValidUsbDevice = false;
     private static String usbController = "";
+    /**
+     * 标记 DualSense 有线触觉通道是否可用。
+     * 这里表示“链路能力可用”，不代表触觉效果质量。
+     */
+    private static boolean dsHapticsReady = false;
 
     public UsbRumbleManager(ReactApplicationContext reactContext) {
         super(reactContext);
@@ -58,6 +63,15 @@ public class UsbRumbleManager extends ReactContextBaseJavaModule {
     @ReactMethod(isBlockingSynchronousMethod=true)
     public String getUsbController() {
         return usbController;
+    }
+
+    public static void setDsHapticsReady(boolean value) {
+        dsHapticsReady = value;
+    }
+
+    @ReactMethod(isBlockingSynchronousMethod=true)
+    public boolean getDsHapticsReady() {
+        return dsHapticsReady;
     }
 
 

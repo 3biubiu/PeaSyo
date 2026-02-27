@@ -3,11 +3,21 @@ package com.peasyo.input;
 import android.hardware.usb.UsbConstants;
 import android.hardware.usb.UsbDevice;
 import android.hardware.usb.UsbDeviceConnection;
+import android.hardware.usb.UsbEndpoint;
+import android.hardware.usb.UsbInterface;
 import android.util.Log;
+
+import com.peasyo.UsbRumbleManager;
 
 import java.nio.ByteBuffer;
 
 public class DualSenseController extends AbstractDualSenseController {
+    /**
+     * DualSense 有线触觉音频端点的包大小。
+     * 通过匹配该端点来判断“有线触觉链路能力”是否存在。
+     */
+    private static final int DS_HAPTIC_ISO_MAX_PACKET = 0x188;
+
     private static final int[] SUPPORTED_VENDORS = {
             0x054C,
             0x0CE6,
@@ -188,7 +198,17 @@ public class DualSenseController extends AbstractDualSenseController {
     @Override
     protected boolean doInit() {
         Log.d("UsbDriverService", "dualsenseController.java doInit");
+        // 检测手柄是否暴露了有线触觉 ISO OUT 端点。
+        // 这里只设置能力标记，具体是否走回退由上层决定。
+        UsbRumbleManager.setDsHapticsReady(hasWiredHapticsEndpoint());
         return true;
+    }
+
+    @Override
+    public void stop() {
+        // 设备停止/移除时，清空触觉可用状态。
+        UsbRumbleManager.setDsHapticsReady(false);
+        super.stop();
     }
 
     @Override
@@ -218,5 +238,24 @@ public class DualSenseController extends AbstractDualSenseController {
         if (res != data.length) {
             Log.d("UsbDriverService DualController.java", "Command set transfer failed: " + res);
         }
+    }
+
+    private boolean hasWiredHapticsEndpoint() {
+        for (int i = 0; i < device.getInterfaceCount(); i++) {
+            UsbInterface iface = device.getInterface(i);
+            // 有线触觉流端点位于 USB Audio 接口。
+            if (iface.getInterfaceClass() != UsbConstants.USB_CLASS_AUDIO) {
+                continue;
+            }
+            for (int j = 0; j < iface.getEndpointCount(); j++) {
+                UsbEndpoint ep = iface.getEndpoint(j);
+                if (ep.getDirection() == UsbConstants.USB_DIR_OUT &&
+                        ep.getType() == UsbConstants.USB_ENDPOINT_XFER_ISOC &&
+                        ep.getMaxPacketSize() == DS_HAPTIC_ISO_MAX_PACKET) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }

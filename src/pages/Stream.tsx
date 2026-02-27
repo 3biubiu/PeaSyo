@@ -92,6 +92,10 @@ function StreamScreen({navigation, route}) {
   const [modalMaxHeight, setModalMaxHeight] = React.useState(250);
   const [showStreamView, setShowStreamView] = React.useState(false);
   const [avgPerformance, setAvgPerformance] = React.useState({});
+  // 顶部调试面板中的触觉状态：USB_HAPTIC(有线触觉可用) / RUMBLE(传统回退)。
+  const [hapticsMode, setHapticsMode] = React.useState<'USB_HAPTIC' | 'RUMBLE'>(
+    'RUMBLE',
+  );
   const [showPerformance, setShowPerformance] = React.useState(false);
   const [showInitOverlay, setShowInitOverlay] = React.useState(false);
   const [settings, setSettings] = React.useState<any>({});
@@ -247,9 +251,17 @@ function StreamScreen({navigation, route}) {
     const _consoleInfo = route.params?.consoleInfo || null;
 
     const usbController = UsbRumbleManager.getUsbController();
+    const dsHapticsReady =
+      typeof UsbRumbleManager.getDsHapticsReady === 'function'
+        ? UsbRumbleManager.getDsHapticsReady()
+        : false;
 
     if (usbController === DSCONTROLLER_NAME && route.params?.isUsbMode) {
       setIsUsbDs5(true);
+      // 只有“有线 + DualSense + 触觉链路可用”才展示为 USB 触觉，否则回退为传统 RUMBLE。
+      setHapticsMode(dsHapticsReady ? 'USB_HAPTIC' : 'RUMBLE');
+    } else {
+      setHapticsMode('RUMBLE');
     }
 
     if (!_consoleInfo) {
@@ -481,6 +493,16 @@ function StreamScreen({navigation, route}) {
           log.info('connected');
 
           setLoading(false);
+          // 连接成功后再次刷新一次触觉模式，避免插拔手柄后的状态延迟。
+          if (route.params?.isUsbMode && usbController === DSCONTROLLER_NAME) {
+            const ready =
+              typeof UsbRumbleManager.getDsHapticsReady === 'function'
+                ? UsbRumbleManager.getDsHapticsReady()
+                : false;
+            setHapticsMode(ready ? 'USB_HAPTIC' : 'RUMBLE');
+          } else {
+            setHapticsMode('RUMBLE');
+          }
           ToastAndroid.show(t('Connected'), ToastAndroid.SHORT);
 
           setTimeout(() => {
@@ -1126,7 +1148,11 @@ function StreamScreen({navigation, route}) {
       {loading && <Spinner text={loadingText} />}
 
       {showPerformance && (
-        <PerfPanel resolution={resolution} performance={avgPerformance} />
+        <PerfPanel
+          resolution={resolution}
+          performance={avgPerformance}
+          hapticsMode={hapticsMode}
+        />
       )}
 
       {renderVirtualGamepad()}

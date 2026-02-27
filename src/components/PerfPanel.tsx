@@ -7,11 +7,16 @@ import {getSettings} from '../store/settingStore';
 type Props = {
   resolution: string;
   performance: any;
+  hapticsMode?: 'USB_HAPTIC' | 'RUMBLE';
 };
 
 const {BatteryModule} = NativeModules;
 
-const PerfPanel: React.FC<Props> = ({resolution = '', performance = {}}) => {
+const PerfPanel: React.FC<Props> = ({
+  resolution = '',
+  performance = {},
+  hapticsMode = 'RUMBLE',
+}) => {
   const {t} = useTranslation();
   const settings = getSettings();
   const [battery, setBattery] = React.useState(100);
@@ -129,6 +134,15 @@ const PerfPanel: React.FC<Props> = ({resolution = '', performance = {}}) => {
         <View>
           <Text style={styles.text}>
             {t('DT')}: {computedDt(performance.decodeTime)} ({codec})
+            {isHorizon ? ' | ' : ''}
+          </Text>
+        </View>
+        <View>
+          <Text style={styles.text}>
+            {t('Vibration Type')}:{' '}
+            {hapticsMode === 'USB_HAPTIC'
+              ? t('Haptic Feedback')
+              : t('Traditional Rumble')}
             {isHorizon ? ' | ' : ''}
           </Text>
         </View>

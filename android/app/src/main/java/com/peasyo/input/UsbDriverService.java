@@ -70,6 +70,11 @@ public class UsbDriverService extends Service implements UsbDriverListener {
         // Remove the the controller from our list (if not removed already)
         controllers.remove(controller);
 
+        // DualSense 拔出后，触觉能力需要立即失效，防止状态残留。
+        if (controller instanceof DualSenseController) {
+            UsbRumbleManager.setDsHapticsReady(false);
+        }
+
         // Call through to the client's listener
         if (listener != null) {
             listener.deviceRemoved(controller);
