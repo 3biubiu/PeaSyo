@@ -24,6 +24,7 @@ import com.peasyo.lib.PerformanceEvent
 import com.peasyo.lib.QuitEvent
 import com.peasyo.lib.QuitReason
 import com.peasyo.lib.RumbleEvent
+import com.peasyo.lib.HapticAudioEvent
 import com.peasyo.lib.Session
 import com.peasyo.lib.TriggerRumbleEvent
 import com.peasyo.log.LogManager
@@ -60,6 +61,8 @@ class StreamSession(
 	val haptic_diff_threshold: Int,
 )
 {
+    private val HAPTIC_TAG = "PS5HAPTIC"
+
 	var session: Session? = null
 		private set
 
@@ -95,6 +98,10 @@ class StreamSession(
 	)
 
 	private var lastProcessedEvent = RumbleEvent(0, 0)
+    private var hapticPcmFrameCount = 0L
+    private var hapticPcmLastLogMs = 0L
+    private var hapticRumbleSuppressedCount = 0L
+    private var hapticRumbleSuppressedLastLogMs = 0L
 
 	private var currentState = ControllerState()
 
@@ -141,6 +148,11 @@ class StreamSession(
 
 	fun shutdown()
 	{
+		// 停止触觉反馈（在断开串流之前，恢复 DualSense 到 rumble 模式）
+		if (usbMode && usbController == DSCONTROLLER_NAME) {
+			getMainActivity()?.stopHaptics()
+		}
+
 		session?.stop()
 		session?.dispose()
 		session = null
@@ -249,6 +261,15 @@ class StreamSession(
 					putString("type", "connected")
 				}
 				sendEvent("streamStateChange", params)
+
+				// 串流连接建立后，尝试启动 DualSense 触觉反馈
+				// 如果当前是 USB 模式且连接了 DualSense，会自动切换到触觉模式
+				if (usbMode && usbController == DSCONTROLLER_NAME) {
+					val started = getMainActivity()?.startHaptics() ?: false
+					if (started) {
+						Log.i("StreamSession", "DualSense haptic feedback enabled")
+					}
+				}
 			}
 			is HolepunchFinishedEvent -> {
 				val params = Arguments.createMap().apply {
@@ -273,6 +294,20 @@ class StreamSession(
 				// TODO: Make rumble more precise
 //				Log.d("StreamView", "RumbleEvent: $event")
 				if (rumble) {
+                    // DualSense 触觉音频已激活时，禁止再走 rumble fallback，
+                    // 否则会出现“像传统震动”的叠加手感。
+                    if (usbMode && usbController == DSCONTROLLER_NAME) {
+                        val hapticsActive = getMainActivity()?.isDualSenseHapticsActive() ?: false
+                        if (hapticsActive) {
+                            hapticRumbleSuppressedCount++
+                            val now = System.currentTimeMillis()
+                            if (hapticRumbleSuppressedCount == 1L || now - hapticRumbleSuppressedLastLogMs >= 1000L) {
+                                Log.i(HAPTIC_TAG, "[STREAM] rumble fallback suppressed: count=$hapticRumbleSuppressedCount left=${event.left} right=${event.right}")
+                                hapticRumbleSuppressedLastLogMs = now
+                            }
+                            return
+                        }
+                    }
 
 					val currentTime = System.currentTimeMillis()
 					var shouldVibrate = false
@@ -450,6 +485,23 @@ class StreamSession(
 					putDouble("frameLost", event.frameLost)
 				}
 				sendEvent("performance", params)
+			}
+			is HapticAudioEvent -> {
+				// DualSense 触觉音频事件
+				// 当 USB 模式下连接了 DualSense 控制器时，
+				// 把 PS5 发来的原始 PCM 数据直接转发给控制器
+				// 控制器的 LRA 致动器会"播放"这段音频，产生细腻的触觉反馈
+				if (usbMode && usbController == DSCONTROLLER_NAME) {
+                    hapticPcmFrameCount++
+                    val now = System.currentTimeMillis()
+                    if (hapticPcmFrameCount == 1L || now - hapticPcmLastLogMs >= 1000L) {
+                        Log.i(HAPTIC_TAG, "[STREAM] haptic PCM received: frames=$hapticPcmFrameCount len=${event.pcmData.size}")
+                        hapticPcmLastLogMs = now
+                    }
+					getMainActivity()?.handleHapticAudio(event.pcmData)
+				} else if (hapticPcmFrameCount == 0L) {
+                    Log.i(HAPTIC_TAG, "[STREAM] haptic event ignored: usbMode=$usbMode controller=$usbController")
+				}
 			}
 		}
 	}

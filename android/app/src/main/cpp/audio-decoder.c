@@ -225,37 +225,69 @@ static uint64_t get_current_time_ms() {
     return (uint64_t)(tv.tv_sec) * 1000 + (uint64_t)(tv.tv_usec) / 1000;
 }
 
+/**
+ * PS5 触觉音频帧处理函数
+ *
+ * 当 PS5 通过串流发来触觉音频数据时，这个函数会被调用。
+ * buf 里面是原始的 PCM 音频数据——这就是 DualSense 触觉致动器要"播放"的波形。
+ *
+ * 我们做两件事：
+ * 1. 发送 HAPTIC_AUDIO 事件：把原始 PCM 数据透传给上层
+ *    → 如果连了 USB DualSense，上层会把这些数据通过等时传输直接发给控制器
+ *    → DualSense 的 LRA 致动器会"播放"这段音频，产生细腻的触觉反馈
+ *
+ * 2. 发送 RUMBLE 事件：从音频中提取平均振幅，转成传统 rumble 值
+ *    → 作为降级方案，给不支持触觉的手柄（Xbox、DualShock 等）使用
+ *    → 效果粗糙但聊胜于无
+ */
 static void android_chiaki_audio_haptics_decoder_frame(uint8_t *buf, size_t buf_size, void *user) {
-    if (buf_size < 25) {
+    if (buf_size < 4) {
         return;
     }
 
     ChiakiSession *session = user;
 
-    int16_t amplitudel = 0, amplituder = 0;
-    int32_t suml = 0, sumr = 0;
-    const size_t sample_size = 2 * sizeof(int16_t); // stereo samples
-
-    size_t buf_count = buf_size / sample_size;
-    for (size_t i = 0; i < buf_count; i++){
-        size_t cur = i * sample_size;
-
-        memcpy(&amplitudel, buf + cur, sizeof(int16_t));
-        memcpy(&amplituder, buf + cur + sizeof(int16_t), sizeof(int16_t));
-        suml += amplitudel;
-        sumr += amplituder;
+    // ===== 事件1: 触觉音频透传（给 DualSense 用）=====
+    // 把 PS5 发来的原始 PCM 数据原封不动传给 Java 层
+    // Java 层会判断：如果连了 USB DualSense 且触觉模式开启，就通过等时传输发给控制器
+    {
+        ChiakiEvent event = { 0 };
+        event.type = CHIAKI_EVENT_HAPTIC_AUDIO;
+        event.haptic_audio.buf = buf;
+        event.haptic_audio.buf_size = buf_size;
+        session->event_cb(&event, session->event_cb_user);
     }
-    uint16_t left = 0, right = 0;
-    left = suml / buf_count;
-    right = sumr / buf_count;
 
-    uint16_t left8 = left >> 8;
-    uint16_t right8 = right >> 8;
+    // ===== 事件2: Rumble 降级（给其他手柄用）=====
+    // 从 PCM 音频中计算左右声道的平均振幅，映射到 0-255 的 rumble 强度
+    // 这就是之前的逻辑，保留作为兼容方案
+    {
+        int16_t amplitudel = 0, amplituder = 0;
+        int32_t suml = 0, sumr = 0;
+        const size_t sample_size = 2 * sizeof(int16_t); // 立体声：每个采样 = 左16bit + 右16bit
 
-    ChiakiEvent event = { 0 };
-    event.type = CHIAKI_EVENT_RUMBLE;
-    event.rumble.unknown = buf[0];
-    event.rumble.left = left8;
-    event.rumble.right = right8;
-    session->event_cb(&event, session->event_cb_user);
+        size_t buf_count = buf_size / sample_size;
+        if (buf_count == 0) return;
+
+        for (size_t i = 0; i < buf_count; i++){
+            size_t cur = i * sample_size;
+            memcpy(&amplitudel, buf + cur, sizeof(int16_t));
+            memcpy(&amplituder, buf + cur + sizeof(int16_t), sizeof(int16_t));
+            suml += amplitudel;
+            sumr += amplituder;
+        }
+        uint16_t left = suml / buf_count;
+        uint16_t right = sumr / buf_count;
+
+        // 右移8位：把 16bit 振幅映射到 0-255 的 rumble 强度
+        uint16_t left8 = left >> 8;
+        uint16_t right8 = right >> 8;
+
+        ChiakiEvent event = { 0 };
+        event.type = CHIAKI_EVENT_RUMBLE;
+        event.rumble.unknown = buf[0];
+        event.rumble.left = left8;
+        event.rumble.right = right8;
+        session->event_cb(&event, session->event_cb_user);
+    }
 }

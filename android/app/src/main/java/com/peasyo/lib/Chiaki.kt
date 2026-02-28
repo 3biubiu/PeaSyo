@@ -376,6 +376,9 @@ data class LoginPinRequestEvent(val pinIncorrect: Boolean): Event()
 data class QuitEvent(val reason: QuitReason, val reasonString: String?): Event()
 data class RumbleEvent(val left: Int, val right: Int): Event()
 data class TriggerRumbleEvent(val typeLeft: Int, val left: Int, val typeRight: Int, val right: Int): Event()
+// DualSense 触觉音频事件：携带 PS5 发来的原始 PCM 数据
+// 这些数据会被直接透传给 DualSense 控制器的 LRA 致动器
+data class HapticAudioEvent(val pcmData: ByteArray): Event()
 data class PerformanceEvent(val rtt: Double, val bitrate: Double, val packetLoss: Double, val decodeTime: Double, val fps: Double, val frameLost: Double): Event()
 class CreateError(val errorCode: ErrorCode): Exception("Failed to create a native object: $errorCode")
 
@@ -453,6 +456,14 @@ class Session(connectInfo: ConnectInfo, logFile: String?, logVerbose: Boolean)
 	private fun eventRumbleTigger(typeLeft: Int, left: Int, typeRight: Int, right: Int)
 	{
 		event(TriggerRumbleEvent(typeLeft, left, typeRight, right))
+	}
+
+	// DualSense 触觉音频回调
+	// 由 chiaki-jni.c 的 CHIAKI_EVENT_HAPTIC_AUDIO 事件触发
+	// pcmData 是 PS5 发来的原始 PCM 触觉音频数据
+	private fun eventHapticAudio(pcmData: ByteArray)
+	{
+		event(HapticAudioEvent(pcmData))
 	}
 
 	fun getPerformance()

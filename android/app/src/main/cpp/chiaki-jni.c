@@ -160,6 +160,7 @@ typedef struct android_chiaki_session_t
     jmethodID java_session_event_quit_meth;
     jmethodID java_session_event_rumble_meth;
     jmethodID java_session_event_rumble_tigger_meth;
+    jmethodID java_session_event_haptic_audio_meth;  // 触觉音频回调
     jfieldID java_controller_state_buttons;
     jfieldID java_controller_state_l2_state;
     jfieldID java_controller_state_r2_state;
@@ -241,6 +242,22 @@ static void android_chiaki_event_cb(ChiakiEvent *event, void *user)
                               (jint)event->trigger_effects.type_right,
                               (jint)(*event->trigger_effects.right));
             break;
+        case CHIAKI_EVENT_HAPTIC_AUDIO:
+        {
+            // 触觉音频事件：把 PS5 发来的原始 PCM 数据传到 Java 层
+            // Java 层会把这些数据通过 USB 等时传输发给 DualSense 控制器
+            jbyteArray arr = E->NewByteArray(env, (jsize)event->haptic_audio.buf_size);
+            if(arr)
+            {
+                E->SetByteArrayRegion(env, arr, 0, (jsize)event->haptic_audio.buf_size,
+                                      (const jbyte *)event->haptic_audio.buf);
+                E->CallVoidMethod(env, session->java_session,
+                                  session->java_session_event_haptic_audio_meth,
+                                  arr);
+                E->DeleteLocalRef(env, arr);
+            }
+            break;
+        }
         default:
             break;
     }
@@ -684,6 +701,8 @@ JNIEXPORT void JNICALL JNI_FCN(sessionCreate)(JNIEnv *env, jobject obj, jobject 
     session->java_session_event_quit_meth = E->GetMethodID(env, session->java_session_class, "eventQuit", "(ILjava/lang/String;)V");
     session->java_session_event_rumble_meth = E->GetMethodID(env, session->java_session_class, "eventRumble", "(II)V");
     session->java_session_event_rumble_tigger_meth = E->GetMethodID(env, session->java_session_class, "eventRumbleTigger", "(IIII)V");
+    // 触觉音频回调：接收 byte[] 参数（PS5 发来的原始 PCM 数据）
+    session->java_session_event_haptic_audio_meth = E->GetMethodID(env, session->java_session_class, "eventHapticAudio", "([B)V");
 
     jclass controller_state_class = E->FindClass(env, BASE_PACKAGE"/ControllerState");
     session->java_controller_state_buttons = E->GetFieldID(env, controller_state_class, "buttons", "I");

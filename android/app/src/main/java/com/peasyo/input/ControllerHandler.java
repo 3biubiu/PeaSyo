@@ -21,6 +21,7 @@ import android.os.CombinedVibration;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.os.VibrationAttributes;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
@@ -43,6 +44,7 @@ import java.util.List;
 import java.util.Map;
 
 public class ControllerHandler implements InputManager.InputDeviceListener, UsbDriverListener {
+    private static final String HAPTIC_TAG = "PS5HAPTIC";
 
     private final Vector2d inputVector = new Vector2d();
 
@@ -60,6 +62,9 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     private boolean stopped = false;
 
     private short currentControllers, initialControllers;
+    private long hapticForwardedFrames = 0;
+    private long hapticNoTargetFrames = 0;
+    private long hapticLastStatsMs = 0;
 
     public ControllerHandler(MainActivity activityContext) {
         this.activityContext = activityContext;
@@ -184,6 +189,92 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
             UsbDeviceContext deviceContext = usbDeviceContexts.valueAt(i);
             deviceContext.device.rumbleTriggers(leftTrigger, rightTrigger);
         }
+    }
+
+    /**
+     * 将触觉音频数据转发给所有已连接的 DualSense 控制器
+     * 只有 DualSense 控制器（AbstractDualSenseController）才支持触觉反馈，
+     * 其他控制器（Xbox 等）会被跳过
+     *
+     * @param pcmData PS5 发来的原始 PCM 触觉音频数据
+     */
+    public void handleHapticAudio(byte[] pcmData) {
+        int targets = 0;
+        for (int i = 0; i < usbDeviceContexts.size(); i++) {
+            UsbDeviceContext deviceContext = usbDeviceContexts.valueAt(i);
+            if (deviceContext.device instanceof AbstractDualSenseController) {
+                targets++;
+                ((AbstractDualSenseController) deviceContext.device).enqueueHapticData(pcmData);
+            }
+        }
+
+        if (targets > 0) {
+            hapticForwardedFrames++;
+        } else {
+            hapticNoTargetFrames++;
+        }
+
+        long now = SystemClock.uptimeMillis();
+        if (hapticForwardedFrames == 1 || now - hapticLastStatsMs >= 1000) {
+            Log.i(HAPTIC_TAG, "[ROUTER] pcm frame routed: len=" + pcmData.length
+                    + " targets=" + targets
+                    + " forwarded=" + hapticForwardedFrames
+                    + " noTarget=" + hapticNoTargetFrames);
+            hapticLastStatsMs = now;
+        }
+    }
+
+    /**
+     * 在所有已连接的 DualSense 控制器上启动触觉反馈
+     * @return true 如果至少有一个控制器成功启动了触觉反馈
+     */
+    public boolean startHaptics() {
+        Log.i(HAPTIC_TAG, "[ROUTER] startHaptics requested, usbControllers=" + usbDeviceContexts.size());
+        hapticForwardedFrames = 0;
+        hapticNoTargetFrames = 0;
+        hapticLastStatsMs = SystemClock.uptimeMillis();
+        boolean anyStarted = false;
+        for (int i = 0; i < usbDeviceContexts.size(); i++) {
+            UsbDeviceContext deviceContext = usbDeviceContexts.valueAt(i);
+            if (deviceContext.device instanceof AbstractDualSenseController) {
+                AbstractDualSenseController ds = (AbstractDualSenseController) deviceContext.device;
+                if (ds.hasHapticEndpoint() && ds.startHaptics()) {
+                    anyStarted = true;
+                }
+            }
+        }
+        Log.i(HAPTIC_TAG, "[ROUTER] startHaptics result=" + anyStarted);
+        return anyStarted;
+    }
+
+    /**
+     * 停止所有 DualSense 控制器的触觉反馈
+     */
+    public void stopHaptics() {
+        Log.i(HAPTIC_TAG, "[ROUTER] stopHaptics requested");
+        for (int i = 0; i < usbDeviceContexts.size(); i++) {
+            UsbDeviceContext deviceContext = usbDeviceContexts.valueAt(i);
+            if (deviceContext.device instanceof AbstractDualSenseController) {
+                ((AbstractDualSenseController) deviceContext.device).stopHaptics();
+            }
+        }
+        Log.i(HAPTIC_TAG, "[ROUTER] stopHaptics finished");
+    }
+
+    /**
+     * 是否存在已经启用触觉音频模式的 DualSense。
+     * 用于在 StreamSession 侧屏蔽 rumble fallback，避免两套震动叠加。
+     */
+    public boolean isAnyDualSenseHapticsActive() {
+        for (int i = 0; i < usbDeviceContexts.size(); i++) {
+            UsbDeviceContext deviceContext = usbDeviceContexts.valueAt(i);
+            if (deviceContext.device instanceof AbstractDualSenseController) {
+                if (((AbstractDualSenseController) deviceContext.device).isHapticEnabled()) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     public void handleSendCommand(byte[] data) {

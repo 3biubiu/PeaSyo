@@ -33,6 +33,9 @@ import com.peasyo.lib.*;
 import com.peasyo.stream.Dpad;
 
 public class MainActivity extends ReactActivity implements UsbDriverService.UsbDriverStateListener {
+  private static final String HAPTIC_TAG = "PS5HAPTIC";
+  private long hapticMainFrameCount = 0;
+  private long hapticMainLastLogMs = 0;
 
   public static MainActivity instance;
   private boolean pendingPipMode = false;
@@ -105,6 +108,51 @@ public class MainActivity extends ReactActivity implements UsbDriverService.UsbD
 
   public void handleSendCommand(byte[] data) {
     this.controllerHandler.handleSendCommand(data);
+  }
+
+  // ===== DualSense 触觉反馈 API =====
+
+  /**
+   * 将触觉音频数据转发给 DualSense 控制器
+   * 由 StreamSession 在收到 PS5 的触觉音频数据时调用
+   */
+  public void handleHapticAudio(byte[] pcmData) {
+    hapticMainFrameCount++;
+    long now = android.os.SystemClock.uptimeMillis();
+    if (hapticMainFrameCount == 1 || now - hapticMainLastLogMs >= 1000) {
+      Log.i(HAPTIC_TAG, "[MAIN] handleHapticAudio: frames=" + hapticMainFrameCount
+              + " len=" + (pcmData != null ? pcmData.length : 0));
+      hapticMainLastLogMs = now;
+    }
+    this.controllerHandler.handleHapticAudio(pcmData);
+  }
+
+  /**
+   * 启动 DualSense 触觉反馈模式
+   * 会发送 HID 报告切换控制器模式，并启动等时传输线程
+   */
+  public boolean startHaptics() {
+    Log.i(HAPTIC_TAG, "[MAIN] startHaptics()");
+    hapticMainFrameCount = 0;
+    hapticMainLastLogMs = android.os.SystemClock.uptimeMillis();
+    boolean started = this.controllerHandler.startHaptics();
+    Log.i(HAPTIC_TAG, "[MAIN] startHaptics result=" + started);
+    return started;
+  }
+
+  /**
+   * 停止 DualSense 触觉反馈，恢复到传统 rumble 模式
+   */
+  public void stopHaptics() {
+    Log.i(HAPTIC_TAG, "[MAIN] stopHaptics()");
+    this.controllerHandler.stopHaptics();
+  }
+
+  /**
+   * 当前是否已有 DualSense 进入触觉音频模式。
+   */
+  public boolean isDualSenseHapticsActive() {
+    return this.controllerHandler.isAnyDualSenseHapticsActive();
   }
 
   public void sendEvent(String eventName, WritableMap params) {
