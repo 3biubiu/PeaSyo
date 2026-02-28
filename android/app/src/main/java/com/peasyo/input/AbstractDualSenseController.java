@@ -33,6 +33,8 @@ public abstract class AbstractDualSenseController extends AbstractController {
     private volatile boolean hapticEnabled = false;
     // 首次真正发送前先下发 0x02 0x0c 0x40 的初始化包
     private boolean hapticPrimed = false;
+    // 是否已下发“手柄扬声器输出”配置，避免每帧重复发送
+    private boolean speakerModeConfigured = false;
 
     public AbstractDualSenseController(UsbDevice device, UsbDeviceConnection connection, int deviceId, UsbDriverListener listener) {
         super(deviceId, listener, device.getVendorId(), device.getProductId());
@@ -281,6 +283,7 @@ public abstract class AbstractDualSenseController extends AbstractController {
         hapticSender = new DualSenseHapticSender();
         hapticSender.start();
         hapticPrimed = false;
+        speakerModeConfigured = false;
         hapticEnabled = true;
         return true;
     }
@@ -291,6 +294,7 @@ public abstract class AbstractDualSenseController extends AbstractController {
     public synchronized void stopHaptics() {
         hapticEnabled = false;
         hapticPrimed = false;
+        speakerModeConfigured = false;
 
         if (hapticSender != null) {
             hapticSender.stop();
@@ -320,6 +324,23 @@ public abstract class AbstractDualSenseController extends AbstractController {
             initReport[2] = 0x40;
             sendCommand(initReport);
             hapticPrimed = true;
+        }
+
+        if (!speakerModeConfigured) {
+            // 切换到“仅手柄扬声器”输出路径（OutputPathSelect = 3 / X_X_R）
+            // 并把扬声器音量提升到常见可听范围，避免有信号但完全听不到。
+            byte[] speakerRouteReport = new byte[48];
+            speakerRouteReport[0] = 0x02;
+            // valid_flag0:
+            // bit7 = AUDIO_CONTROL_ENABLE
+            // bit5 = SPEAKER_VOLUME_ENABLE
+            speakerRouteReport[1] = (byte) 0xA0;
+            // speaker_audio_volume，DualSense 常用可听范围约 0x3d~0x64
+            speakerRouteReport[6] = 0x64;
+            // audio_flags: OutputPathSelect 位于 [5:4]，3 表示仅手柄扬声器
+            speakerRouteReport[8] = 0x30;
+            sendCommand(speakerRouteReport);
+            speakerModeConfigured = true;
         }
 
         sender.enqueue(frame);
