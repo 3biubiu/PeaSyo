@@ -49,6 +49,14 @@ enum class Codec(val value: Int)
 	CODEC_H265_HDR(2)
 }
 
+object FramePacing
+{
+	const val FRAME_PACING_MIN_LATENCY = 0
+	const val FRAME_PACING_BALANCED = 1
+	const val FRAME_PACING_CAP_FPS = 2
+	const val FRAME_PACING_MAX_SMOOTHNESS = 3
+}
+
 @Parcelize
 data class ConnectVideoProfile(
 	val width: Int,
@@ -112,7 +120,9 @@ private class ChiakiNative
 		@JvmStatic external fun sessionSetText(ptr: Long, text: String): Int
 		@JvmStatic external fun sessionKeyboardReject(ptr: Long): Int
 		@JvmStatic external fun sessionJoin(ptr: Long): Int
-		@JvmStatic external fun sessionSetSurface(ptr: Long, surface: Surface?, maxOperatingRate: Int)
+		@JvmStatic external fun sessionSetSurface(ptr: Long, surface: Surface?, maxOperatingRate: Int, framePacing: Int)
+		@JvmStatic external fun sessionSetAudioOutputDevice(ptr: Long, deviceId: Int)
+		@JvmStatic external fun sessionSetAudioSharingMode(ptr: Long, sharingMode: Int)
 		@JvmStatic external fun sessionSetControllerState(ptr: Long, controllerState: ControllerState)
 		@JvmStatic external fun sessionSetSensorState(ptr: Long)
 		@JvmStatic external fun sessionSetLoginPin(ptr: Long, pin: String)
@@ -482,9 +492,19 @@ class Session(connectInfo: ConnectInfo, logFile: String?, logVerbose: Boolean)
 		event(PerformanceEvent(rtt, bitrate, packetLoss, decodeTime, fps, frameLost))
 	}
 
-	fun setSurface(surface: Surface?, maxOperatingRate: Int)
+	fun setSurface(surface: Surface?, maxOperatingRate: Int, framePacing: Int = FramePacing.FRAME_PACING_MIN_LATENCY)
 	{
-		ChiakiNative.sessionSetSurface(nativePtr, surface, maxOperatingRate)
+		ChiakiNative.sessionSetSurface(nativePtr, surface, maxOperatingRate, framePacing)
+	}
+
+	fun setAudioOutputDevice(deviceId: Int)
+	{
+		ChiakiNative.sessionSetAudioOutputDevice(nativePtr, deviceId)
+	}
+
+	fun setAudioSharingMode(sharingMode: Int)
+	{
+		ChiakiNative.sessionSetAudioSharingMode(nativePtr, sharingMode)
 	}
 
 	fun setControllerState(controllerState: ControllerState)

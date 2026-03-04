@@ -16,6 +16,8 @@ export type Settings = {
   remote_bitrate: number;
   remote_codec: string;
   remote_fps: number;
+  audio_output_mode: string;
+  audio_sharing_mode: string;
   useSurface: boolean;
   fsr: boolean;
   maxOperatingRate: number;
@@ -36,6 +38,7 @@ export type Settings = {
   dead_zone: number;
   edge_compensation: number;
   short_trigger: boolean;
+  frame_pacing: string;
   video_format: string;
   show_virtual_gamead: boolean;
   show_touchpad: boolean;
@@ -74,6 +77,8 @@ const defaultSettings: Settings = {
   remote_bitrate: 10000,
   remote_codec: 'H265',
   remote_fps: 30,
+  audio_output_mode: 'AUTO',
+  audio_sharing_mode: 'EXCLUSIVE',
   useSurface: true,
   fsr: false,
   maxOperatingRate: 0x7FFF,
@@ -94,6 +99,7 @@ const defaultSettings: Settings = {
   dead_zone: 0.2,
   edge_compensation: 0,
   short_trigger: false,
+  frame_pacing: '0',
   video_format: '',
   show_virtual_gamead: false,
   show_touchpad: true,

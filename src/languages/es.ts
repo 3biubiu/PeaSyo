@@ -77,6 +77,20 @@ export default {
     FPSDesc: 'Establecer la tasa de fotogramas de transmisión',
     RemoteFPS: 'FPS remoto',
     RemoteFPSDesc: 'Establecer la tasa de fotogramas de transmisión remota',
+    'Audio mode': 'Modo de audio',
+    AudioModeDesc:
+      'Elige dónde se reproduce el audio de la transmisión en Android. El modo automático intenta evitar dispositivos USB virtuales del mando.',
+    'System default': 'Predeterminado del sistema',
+    Speaker: 'Altavoz',
+    'Wired headset': 'Auriculares con cable',
+    'Bluetooth headset': 'Auriculares Bluetooth',
+    'USB audio': 'Audio USB',
+    'HDMI audio': 'Audio HDMI',
+    'Audio sharing mode': 'Modo de uso compartido de audio',
+    AudioSharingModeDesc:
+      'Elige el modo de uso compartido de Oboe. Shared es más compatible; Exclusive puede tener menor latencia en algunos dispositivos.',
+    'Shared (Recommended)': 'Shared (Recomendado)',
+    'Exclusive (Low latency)': 'Exclusive (Baja latencia)',
     'Performance render': 'Renderizado de rendimiento',
     PerformanceRenderDesc:
       'Usar renderizado de video de alto rendimiento. Por defecto, se utiliza renderizado de alto rendimiento, pero ten en cuenta que la transmisión se detendrá si la aplicación se envía al fondo. Si necesitas cambiar frecuentemente al fondo mientras mantienes la transmisión, desactiva el modo de renderizado de alto rendimiento',
@@ -293,6 +307,7 @@ export default {
     DisplaySettings: 'Pantalla',
     LocalSettings: 'Transmisión local',
     RemoteSettings: 'Transmisión remota',
+    AudioSettings: 'Audio',
     GamepadSettings: 'Gamepad y Vibración',
     vGamepadSettings: 'Virtual controller',
     TouchpadSettings: 'Panel táctil',
@@ -379,5 +394,13 @@ export default {
     FSRTitle: 'Super Resolución (AMD FSR 1.0) (Experimental)',
     FSRDesc:
       'Habilitar la tecnología de super resolución AMD FSR 1.0, que es una función experimental que puede tener problemas de compatibilidad o estabilidad. Se recomienda usar en dispositivos de alto rendimiento (HDR no funciona)',
+    frame_pacing_title: 'Ritmo de cuadros por segundo en video',
+    frame_pacing_desc:
+      'Especificar como balancear la latencia de video y la fluidez',
+    latency: 'Preferir la menor latencia posible',
+    balanced: 'Equilibrado',
+    'cap-fps': 'Equilibrado con limitador de FPS (Cuadros por Segundo)',
+    smoothness:
+      'Preferir mayor fluidez de video (puede incrementar significativamente la latencia)',
   },
 };

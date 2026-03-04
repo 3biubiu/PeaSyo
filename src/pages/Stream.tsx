@@ -296,8 +296,11 @@ function StreamScreen({navigation, route}) {
       remote_fps,
       remote_bitrate_mode,
       remote_bitrate,
+      audio_output_mode,
+      audio_sharing_mode,
       rumble,
       rumble_intensity,
+      frame_pacing,
       video_format,
       sensor,
       sensor_invert,
@@ -416,6 +419,7 @@ function StreamScreen({navigation, route}) {
       fps: isRemote ? remote_fps : fps,
       bitrate: isRemote ? remote_bitrate : bitrate,
       codec: _codec,
+      framePacing: frame_pacing,
       rumble,
       rumbleIntensity: rumble_intensity,
       usbMode: route.params?.isUsbMode || false,
@@ -434,6 +438,8 @@ function StreamScreen({navigation, route}) {
       hapticChangeThreshold: haptic_change_threshold,
       hapticDiffThreshold: haptic_diff_threshold,
       maxOperatingRate: maxOperatingRate,
+      audioMode: audio_output_mode,
+      audioSharingMode: audio_sharing_mode,
     };
 
     log.info('_streamInfo:', _streamInfo);
@@ -700,6 +706,7 @@ function StreamScreen({navigation, route}) {
       },
     );
 
+    // Adaptive trigger
     triggerEventListener.current = eventEmitter.addListener(
       'trigger',
       states => {

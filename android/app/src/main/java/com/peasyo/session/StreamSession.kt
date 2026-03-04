@@ -13,6 +13,7 @@ import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.peasyo.MainActivity
 import com.peasyo.UsbRumbleManager
+import com.peasyo.audio.AudioRouteResolver
 import com.peasyo.lib.ConnectInfo
 import com.peasyo.lib.ConnectedEvent
 import com.peasyo.lib.HolepunchFinishedEvent
@@ -56,9 +57,12 @@ class StreamSession(
 	val rumbleIntensity: Int,
 	val usbMode: Boolean,
 	val usbController: String,
+	val audioMode: String,
+	val audioSharingMode: String,
 	val haptic_stable_threshold: Int,
 	val haptic_change_threshold: Int,
 	val haptic_diff_threshold: Int,
+	val framePacing: Int,
 )
 {
 	var session: Session? = null
@@ -194,10 +198,22 @@ class StreamSession(
 			val session = Session(connectInfo, logManager.createNewFile().file.absolutePath, logVerbose)
 			_state.value = StreamStateConnecting
 			session.eventCallback = this::eventCallback
+			val sharingMode = if (audioSharingMode.equals("EXCLUSIVE", ignoreCase = true)) 1 else 0
+			session.setAudioSharingMode(sharingMode)
+			val appContext = reactContext?.applicationContext
+			if (appContext != null) {
+				val outputDeviceId = AudioRouteResolver.resolveOutputDeviceId(
+					appContext,
+					audioMode,
+					usbMode,
+					usbController
+				)
+				session.setAudioOutputDevice(outputDeviceId)
+			}
 			session.start()
 			val surface = surface
 			if(surface != null) {
-				session.setSurface(surface, maxOperatingRate)
+				session.setSurface(surface, maxOperatingRate, framePacing)
 			}
 			this.session = session
 		}
@@ -512,7 +528,7 @@ class StreamSession(
 			val currentSurface = surfaceView.holder.surface
 			if (currentSurface != null && currentSurface.isValid) {
 				this@StreamSession.surface = currentSurface
-				session?.setSurface(currentSurface, maxOperatingRate)
+				session?.setSurface(currentSurface, maxOperatingRate, framePacing)
 			}
 		}
 
@@ -524,14 +540,14 @@ class StreamSession(
 				val surface = holder.surface
 				Log.d("StreamView", "surfaceChanged:" + surface)
 				this@StreamSession.surface = surface
-				session?.setSurface(surface, maxOperatingRate)
+				session?.setSurface(surface, maxOperatingRate, framePacing)
 			}
 
 			override fun surfaceDestroyed(holder: SurfaceHolder)
 			{
 				Log.d("StreamView", "surfaceDestroyed:" + surface)
 				this@StreamSession.surface = null
-				session?.setSurface(null, 0x7FFF) // or a sensible default when surface is destroyed
+				session?.setSurface(null, 0x7FFF, framePacing) // or a sensible default when surface is destroyed
 			}
 		})
 	}
@@ -543,13 +559,13 @@ class StreamSession(
 		this@StreamSession.surface?.release()
 		val newSurface = Surface(surfaceTexture)
 		this@StreamSession.surface = newSurface
-		session?.setSurface(newSurface, maxOperatingRate)
+		session?.setSurface(newSurface, maxOperatingRate, framePacing)
 	}
 
 	fun handleSessionClearSurface() {
 		Log.d("StreamView", "handleSessionClearSurface")
 		surfaceTexture = null
-		session?.setSurface(null, 0x7FFF)
+		session?.setSurface(null, 0x7FFF, framePacing)
 		this@StreamSession.surface?.let {
 			it.release()
 		}

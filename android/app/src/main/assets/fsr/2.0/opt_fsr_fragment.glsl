@@ -8,7 +8,11 @@
 //    AH3 FsrEasuSampleH(AF2 p) { return MyTex.SampleLevel(LinearSampler, p, 0).xyz; }
 //==============================================================================================================================
 #extension GL_OES_EGL_image_external : require
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
 precision mediump float;
+#endif
 
 uniform samplerExternalOES inputTexture; // 纹理
 uniform vec2 inputTextureSize; // 输入纹理大小
@@ -173,11 +177,11 @@ void FsrMobile(
     float edgeGuard = smoothstep(0.28, 0.75, localVariance);
     float clampedSharpness = clamp(sharpness, 0.0, 2.0);
     // Adaptive sharpness keeps text crisp while damping halos on smooth skin tones.
-    float adaptiveSharpness = mix(0.6, 1.0, detailStrength);
-    adaptiveSharpness = mix(adaptiveSharpness, adaptiveSharpness * 0.75, edgeGuard);
-    float detailBlend = mix(0.35, 0.95, detailStrength);
-    detailBlend *= mix(1.0, 0.7, edgeGuard);
-    float ringingLimiter = mix(0.08, 0.2, detailStrength);
+    float adaptiveSharpness = mix(0.68, 1.05, detailStrength);
+    adaptiveSharpness = mix(adaptiveSharpness, adaptiveSharpness * 0.82, edgeGuard);
+    float detailBlend = mix(0.40, 0.99, detailStrength);
+    detailBlend *= mix(1.0, 0.78, edgeGuard);
+    float ringingLimiter = mix(0.07, 0.18, detailStrength);
 //------------------------------------------------------------------------------------------------------------------------------ 
     // Combined RCAS: Min and max of ring.
     float mn4R = min(AMin3H1(sA.r, sB.r, sD.r), sE.r);

@@ -12,26 +12,52 @@ import androidx.media3.common.util.UnstableApi;
 
 import java.io.IOException;
 
-/**
- * 根据 OpenPs 的 FsrMobileVideoProcessor 改写，使用单个 shader 完成 EASU+RCAS。
- */
 @UnstableApi
 public class FsrVideoProcessor implements VideoProcessingGLSurfaceView.VideoProcessor {
 
     private static final String TAG = "FsrVideoProcessor";
+    // Keep two-pass pipeline enabled; runtime failures will fallback automatically.
+    private static final boolean ENABLE_TWO_PASS_PIPELINE = true;
+    // Some drivers fail with invalid operation on 3.1 two-pass uniforms; prefer 3.1 mobile instead.
+    private static final boolean ENABLE_TWO_PASS_FOR_31 = false;
+
+    private static final int PIPELINE_NONE = 0;
+    private static final int PIPELINE_TWO_PASS = 1;
+    private static final int PIPELINE_MOBILE_SINGLE_PASS = 2;
 
     private final Context context;
+
+    private int pipelineMode = PIPELINE_NONE;
+    private String activeShaderDir = "fsr/2.0/";
     private boolean needInputSize = true;
+
+    private final int[] framebuffers = new int[1];
+    private final int[] textures = new int[1];
+
     @Nullable
-    private GlProgram program;
-    private final float[] outputSize = new float[2];
-    private final float[] inputSize = new float[2];
-    private final float[] overriddenOutputSize = new float[2];
-    private boolean lastInputLogged;
-    private boolean hdrToneMapping;
-    private boolean manualSharpness;
-    private float manualSharpnessValue = 1.2f;
-    private boolean outputSizeOverridden;
+    private GlProgram easuProgram;
+    @Nullable
+    private GlProgram rcasProgram;
+    @Nullable
+    private GlProgram mobileProgram;
+    @Nullable
+    private GlProgram passthroughProgram;
+
+    // RCAS sharpness is inverse (0 = strongest, bigger = weaker).
+    private float rcasSharpness = 0.1f;
+    // Mobile single-pass shader uses 1.0 as normal strength.
+    private float mobileSharpness = 1.5f;
+
+    private boolean mobileHasSharpness;
+    private boolean mobileHasHdrToneMap;
+    private boolean twoPassFailureLogged;
+
+    private boolean fsrEnabled = true;
+    private boolean hdrToneMappingEnabled;
+
+    private int outputWidth = -1;
+    private int outputHeight = -1;
+    private float[] outputSize = new float[2];
 
     public FsrVideoProcessor(Context context) {
         this.context = context.getApplicationContext();
@@ -39,15 +65,223 @@ public class FsrVideoProcessor implements VideoProcessingGLSurfaceView.VideoProc
 
     @Override
     public void initialize(int glMajorVersion, int glMinorVersion, String extensions) {
-        // 在多数 Android 设备上，OpenGL context 实际运行在 GLES 2/3 的兼容模式，
-        // 使用 3.x shader 会因为 #version 310 / textureGather 等特性报错。
-        // 因此默认强制使用 2.0 版本的 FSR shader，兼容性最佳。
-        String shaderDir = "fsr/2.0/";
-        Log.i(TAG, "FSR shader dir: " + shaderDir);
+        resetPrograms();
+        deleteFramebuffer();
+
+        boolean supportsExternalOesEssl3 = extensions != null
+                && extensions.contains("GL_OES_EGL_image_external_essl3");
+
+        String preferredDir = "fsr/2.0/";
+        boolean preferredNeedInputSize = true;
+        if (supportsExternalOesEssl3) {
+            if (glMajorVersion > 3 || (glMajorVersion == 3 && glMinorVersion >= 1)) {
+                preferredDir = "fsr/3.1/";
+                preferredNeedInputSize = false;
+            } else if (glMajorVersion == 3 && glMinorVersion == 0) {
+                preferredDir = "fsr/3.0/";
+                preferredNeedInputSize = false;
+            }
+        } else if (glMajorVersion >= 3) {
+            Log.w(TAG, "GLES3 context without GL_OES_EGL_image_external_essl3, force FSR 2.0 shaders");
+        }
+
+        Log.i(TAG, "FSR preferred shader dir: " + preferredDir);
         Log.i(TAG, "OpenGL extensions: " + extensions);
 
+        boolean skipTwoPassForDriverStability = !ENABLE_TWO_PASS_PIPELINE;
+        if (skipTwoPassForDriverStability) {
+            Log.w(TAG, "Skip two-pass FSR globally, use mobile pipeline for stability");
+        }
+
+        boolean tryTwoPassPreferred = !skipTwoPassForDriverStability
+                && (!"fsr/3.1/".equals(preferredDir) || ENABLE_TWO_PASS_FOR_31);
+        if ("fsr/3.1/".equals(preferredDir) && !ENABLE_TWO_PASS_FOR_31) {
+            Log.w(TAG, "Skip two-pass for fsr/3.1 and use 3.1 mobile path to avoid driver invalid-operation");
+        }
+        if (tryTwoPassPreferred
+                && (tryInitTwoPass(preferredDir, preferredNeedInputSize)
+                || (!"fsr/2.0/".equals(preferredDir) && tryInitTwoPass("fsr/2.0/", true)))) {
+            // Keep texture parameters aligned with TvBox FsrVideoProcessor implementation.
+            GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_NEAREST);
+            GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR);
+            GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);
+            GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
+            return;
+        }
+
+        // If two-pass FSR hits driver compiler bugs, fallback to mobile single-pass FSR (still has sharpening).
+        boolean preferredHasMobileExtras = "fsr/2.0/".equals(preferredDir);
+        if (tryInitMobileSinglePass(
+                preferredDir,
+                preferredNeedInputSize,
+                preferredHasMobileExtras,
+                preferredHasMobileExtras
+        )
+                || (!"fsr/2.0/".equals(preferredDir)
+                && tryInitMobileSinglePass("fsr/2.0/", true, true, true))) {
+            GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_NEAREST);
+            GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR);
+            GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);
+            GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
+            return;
+        }
+
+        pipelineMode = PIPELINE_NONE;
+        activeShaderDir = "none";
+        Log.e(TAG, "All FSR pipelines failed, fallback to passthrough only");
+    }
+
+    @Override
+    public void setSurfaceSize(int width, int height) {
+        if (width <= 0 || height <= 0) {
+            return;
+        }
+        if (outputWidth == width && outputHeight == height) {
+            return;
+        }
+        Log.i(TAG, "setSurfaceSize(" + width + "," + height + ")");
+        outputWidth = width;
+        outputHeight = height;
+        outputSize = new float[]{width, height};
+
+        if (pipelineMode == PIPELINE_TWO_PASS) {
+            deleteFramebuffer();
+            createFramebuffer();
+        } else {
+            deleteFramebuffer();
+        }
+    }
+
+    @Override
+    public void draw(int frameTexture,
+                     long frameTimestampUs,
+                     int frameWidth,
+                     int frameHeight,
+                     float[] transformMatrix) {
+        if (!fsrEnabled) {
+            drawPassthrough(frameTexture, transformMatrix);
+            return;
+        }
+
+        if (pipelineMode == PIPELINE_TWO_PASS) {
+            drawTwoPass(frameTexture, frameWidth, frameHeight, transformMatrix);
+            return;
+        }
+        if (pipelineMode == PIPELINE_MOBILE_SINGLE_PASS) {
+            drawMobileSinglePass(frameTexture, frameWidth, frameHeight, transformMatrix);
+            return;
+        }
+
+        drawPassthrough(frameTexture, transformMatrix);
+    }
+
+    @Override
+    public void release() {
+        resetPrograms();
+        deleteFramebuffer();
+    }
+
+    public void setHdrToneMappingEnabled(boolean enabled) {
+        hdrToneMappingEnabled = enabled;
+    }
+
+    public void setSharpness(float value) {
+        float clamped = Math.max(0f, Math.min(2f, value));
+        mobileSharpness = clamped;
+        // Map [0..2] (stronger as larger) to RCAS stop domain [2..0].
+        rcasSharpness = 2f - clamped;
+        Log.i(
+                TAG,
+                "Sharpness request=" + value + ", clamped=" + clamped
+                        + ", mobileApplied=" + mobileSharpness
+                        + ", rcasApplied=" + rcasSharpness
+        );
+        logEffectiveSharpness("setSharpness");
+    }
+
+    public void resetSharpness() {
+        rcasSharpness = 0.2f;
+        mobileSharpness = 1.4f;
+        logEffectiveSharpness("resetSharpness");
+    }
+
+    public void setFsrEnabled(boolean enabled) {
+        fsrEnabled = enabled;
+    }
+
+    public void setBypassScaleThreshold(float threshold) {
+        // No-op in current FSR pipeline. Kept for API compatibility.
+    }
+
+    public void setMaxFsrPixels(int maxPixels) {
+        // No-op in current FSR pipeline. Kept for API compatibility.
+    }
+
+    public void setOutputSizeOverride(int width, int height) {
+        // No-op in current FSR pipeline. Kept for API compatibility.
+    }
+
+    private boolean tryInitTwoPass(String shaderDir, boolean requireInputSize) {
         try {
-            program = new GlProgram(
+            GlProgram easu = new GlProgram(
+                    context,
+                    shaderDir + "fsr_easu_vertex.glsl",
+                    shaderDir + "fsr_easu_fragment.glsl"
+            );
+            easu.setBufferAttribute(
+                    "aPosition",
+                    GlUtil.getNormalizedCoordinateBounds(),
+                    GlUtil.HOMOGENEOUS_COORDINATE_VECTOR_SIZE
+            );
+            easu.setBufferAttribute(
+                    "aTexCoords",
+                    GlUtil.getTextureCoordinateBounds(),
+                    GlUtil.HOMOGENEOUS_COORDINATE_VECTOR_SIZE
+            );
+
+            GlProgram rcas = new GlProgram(
+                    context,
+                    shaderDir + "fsr_rcas_vertex.glsl",
+                    shaderDir + "fsr_rcas_fragment.glsl"
+            );
+            rcas.setBufferAttribute(
+                    "aPosition",
+                    GlUtil.getNormalizedCoordinateBounds(),
+                    GlUtil.HOMOGENEOUS_COORDINATE_VECTOR_SIZE
+            );
+            rcas.setBufferAttribute(
+                    "aTexCoords",
+                    GlUtil.getTextureCoordinateBounds(),
+                    GlUtil.HOMOGENEOUS_COORDINATE_VECTOR_SIZE
+            );
+
+            easuProgram = easu;
+            rcasProgram = rcas;
+            needInputSize = requireInputSize;
+            pipelineMode = PIPELINE_TWO_PASS;
+            activeShaderDir = shaderDir;
+            if (outputWidth > 0 && outputHeight > 0) {
+                createFramebuffer();
+            }
+            Log.i(TAG, "FSR pipeline active: two-pass, shaderDir=" + shaderDir);
+            logEffectiveSharpness("init-two-pass");
+            return true;
+        } catch (GlException | IOException e) {
+            Log.e(TAG, "Failed to initialize two-pass FSR from " + shaderDir, e);
+            safeDeleteProgram(easuProgram);
+            easuProgram = null;
+            safeDeleteProgram(rcasProgram);
+            rcasProgram = null;
+            return false;
+        }
+    }
+
+    private boolean tryInitMobileSinglePass(String shaderDir,
+                                            boolean requireInputSize,
+                                            boolean hasHdrToneMapUniform,
+                                            boolean hasSharpnessUniform) {
+        try {
+            GlProgram program = new GlProgram(
                     context,
                     shaderDir + "opt_fsr_vertex.glsl",
                     shaderDir + "opt_fsr_fragment.glsl"
@@ -62,70 +296,287 @@ public class FsrVideoProcessor implements VideoProcessingGLSurfaceView.VideoProc
                     GlUtil.getTextureCoordinateBounds(),
                     GlUtil.HOMOGENEOUS_COORDINATE_VECTOR_SIZE
             );
-        } catch (GlException e) {
-            Log.e(TAG, "Failed to initialize FSR shader", e);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+
+            mobileProgram = program;
+            needInputSize = requireInputSize;
+            mobileHasHdrToneMap = hasHdrToneMapUniform;
+            mobileHasSharpness = hasSharpnessUniform;
+            pipelineMode = PIPELINE_MOBILE_SINGLE_PASS;
+            activeShaderDir = shaderDir;
+            deleteFramebuffer();
+            Log.w(TAG, "FSR pipeline fallback: mobile single-pass, shaderDir=" + shaderDir);
+            logEffectiveSharpness("init-mobile-single-pass");
+            return true;
+        } catch (GlException | IOException e) {
+            Log.e(TAG, "Failed to initialize mobile single-pass FSR from " + shaderDir, e);
+            safeDeleteProgram(mobileProgram);
+            mobileProgram = null;
+            return false;
         }
-
-        GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_NEAREST);
-        GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR);
-        GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_REPEAT);
-        GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_REPEAT);
     }
 
-    @Override
-    public void setSurfaceSize(int width, int height) {
-        outputSize[0] = width;
-        outputSize[1] = height;
-        Log.i(TAG, "setSurfaceSize(" + width + "," + height + ")");
-    }
-
-    @Override
-    public void draw(int frameTexture,
-                     long frameTimestampUs,
-                     int frameWidth,
-                     int frameHeight,
-                     float[] transformMatrix) {
-        GlProgram currentProgram = program;
-        if (currentProgram == null) {
+    private void drawTwoPass(int frameTexture,
+                             int frameWidth,
+                             int frameHeight,
+                             float[] transformMatrix) {
+        GlProgram easu = easuProgram;
+        GlProgram rcas = rcasProgram;
+        if (easu == null || rcas == null) {
+            drawPassthrough(frameTexture, transformMatrix);
             return;
         }
+        if (outputWidth <= 0 || outputHeight <= 0) {
+            drawPassthrough(frameTexture, transformMatrix);
+            return;
+        }
+        if (framebuffers[0] == 0 || textures[0] == 0) {
+            createFramebuffer();
+            if (framebuffers[0] == 0 || textures[0] == 0) {
+                drawPassthrough(frameTexture, transformMatrix);
+                return;
+            }
+        }
+
         float[] inputTextureSize = null;
         if (needInputSize) {
-            inputTextureSize = updateInputSize(frameWidth, frameHeight, transformMatrix);
+            inputTextureSize = (frameWidth > 0 && frameHeight > 0)
+                    ? new float[]{frameWidth, frameHeight}
+                    : new float[]{0f, 0f};
         }
-        float[] resolvedOutputSize = resolveOutputSize();
+
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, framebuffers[0]);
+        try {
+            easu.setSamplerTexIdUniform("inputTexture", frameTexture, 0);
+            if (inputTextureSize != null) {
+                easu.setFloatsUniform("inputTextureSize", inputTextureSize);
+            }
+            easu.setFloatsUniform("outputTextureSize", outputSize);
+            easu.setFloatsUniform("uTexTransform", transformMatrix);
+            easu.bindAttributesAndUniforms();
+        } catch (GlException e) {
+            Log.e(TAG, "Failed to bind EASU shader program (" + activeShaderDir + ")", e);
+            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0);
+            fallbackToMobileSinglePass("bind-easu");
+            if (pipelineMode == PIPELINE_MOBILE_SINGLE_PASS) {
+                drawMobileSinglePass(frameTexture, frameWidth, frameHeight, transformMatrix);
+            } else {
+                drawPassthrough(frameTexture, transformMatrix);
+            }
+            return;
+        }
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
+        checkGlError("Failed EASU draw");
+
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0);
+        try {
+            rcas.setSamplerTexIdUniform("inputTexture", textures[0], 0);
+            if (needInputSize) {
+                rcas.setFloatsUniform("inputTextureSize", outputSize);
+            }
+            rcas.setFloatUniform("sharpness", rcasSharpness);
+            rcas.bindAttributesAndUniforms();
+        } catch (GlException e) {
+            Log.e(TAG, "Failed to bind RCAS shader program (" + activeShaderDir + ")", e);
+            fallbackToMobileSinglePass("bind-rcas");
+            if (pipelineMode == PIPELINE_MOBILE_SINGLE_PASS) {
+                drawMobileSinglePass(frameTexture, frameWidth, frameHeight, transformMatrix);
+            } else {
+                drawPassthrough(frameTexture, transformMatrix);
+            }
+            return;
+        }
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
+        checkGlError("Failed RCAS draw");
+    }
+
+    private void drawMobileSinglePass(int frameTexture,
+                                      int frameWidth,
+                                      int frameHeight,
+                                      float[] transformMatrix) {
+        GlProgram program = mobileProgram;
+        if (program == null || outputWidth <= 0 || outputHeight <= 0) {
+            drawPassthrough(frameTexture, transformMatrix);
+            return;
+        }
+
+        float[] inputTextureSize = null;
+        if (needInputSize) {
+            inputTextureSize = (frameWidth > 0 && frameHeight > 0)
+                    ? new float[]{frameWidth, frameHeight}
+                    : new float[]{0f, 0f};
+        }
 
         try {
-            currentProgram.setSamplerTexIdUniform("inputTexture", frameTexture, 0);
+            program.setSamplerTexIdUniform("inputTexture", frameTexture, 0);
             if (inputTextureSize != null) {
-                currentProgram.setFloatsUniform("inputTextureSize", inputTextureSize);
+                program.setFloatsUniform("inputTextureSize", inputTextureSize);
             }
-            currentProgram.setFloatsUniform("outputTextureSize", resolvedOutputSize);
-            currentProgram.setFloatsUniform("uTexTransform", transformMatrix);
-            currentProgram.setFloatUniform("uHdrToneMap", hdrToneMapping ? 1f : 0f);
-            currentProgram.setFloatUniform("sharpness", resolveSharpness(inputTextureSize, resolvedOutputSize));
-            currentProgram.bindAttributesAndUniforms();
-            Log.v(TAG, "FSR draw frame tex=" + frameTexture + " size=" + frameWidth + "x" + frameHeight);
+            program.setFloatsUniform("outputTextureSize", outputSize);
+            program.setFloatsUniform("uTexTransform", transformMatrix);
+            if (mobileHasHdrToneMap) {
+                program.setFloatUniform("uHdrToneMap", hdrToneMappingEnabled ? 1f : 0f);
+            }
+            if (mobileHasSharpness) {
+                program.setFloatUniform("sharpness", mobileSharpness);
+            }
+            program.bindAttributesAndUniforms();
         } catch (GlException e) {
-            Log.e(TAG, "Failed to bind fsr shader program", e);
+            Log.e(TAG, "Failed to bind mobile FSR shader program (" + activeShaderDir + ")", e);
+            drawPassthrough(frameTexture, transformMatrix);
+            return;
         }
 
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
-        checkGlError("FSR draw failed");
+        checkGlError("Failed mobile FSR draw");
     }
 
-    @Override
-    public void release() {
-        if (program != null) {
-            try {
-                program.delete();
-            } catch (GlException e) {
-                Log.e(TAG, "Failed to delete FSR shader program", e);
-            }
-            program = null;
+    private void createFramebuffer() {
+        if (outputWidth <= 0 || outputHeight <= 0) {
+            return;
+        }
+        GLES20.glGenFramebuffers(1, framebuffers, 0);
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, framebuffers[0]);
+
+        GLES20.glGenTextures(1, textures, 0);
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textures[0]);
+        GLES20.glTexImage2D(
+                GLES20.GL_TEXTURE_2D,
+                0,
+                GLES20.GL_RGBA,
+                outputWidth,
+                outputHeight,
+                0,
+                GLES20.GL_RGBA,
+                GLES20.GL_UNSIGNED_BYTE,
+                null
+        );
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR);
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR);
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
+
+        GLES20.glFramebufferTexture2D(
+                GLES20.GL_FRAMEBUFFER,
+                GLES20.GL_COLOR_ATTACHMENT0,
+                GLES20.GL_TEXTURE_2D,
+                textures[0],
+                0
+        );
+
+        int status = GLES20.glCheckFramebufferStatus(GLES20.GL_FRAMEBUFFER);
+        if (status != GLES20.GL_FRAMEBUFFER_COMPLETE) {
+            Log.e(TAG, "Framebuffer is not complete: " + status);
+            deleteFramebuffer();
+        }
+
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0);
+    }
+
+    private void deleteFramebuffer() {
+        if (framebuffers[0] != 0) {
+            GLES20.glDeleteFramebuffers(1, framebuffers, 0);
+            framebuffers[0] = 0;
+        }
+        if (textures[0] != 0) {
+            GLES20.glDeleteTextures(1, textures, 0);
+            textures[0] = 0;
+        }
+    }
+
+    private void drawPassthrough(int frameTexture, float[] transformMatrix) {
+        GlProgram program;
+        try {
+            program = ensurePassthroughProgram();
+            program.setSamplerTexIdUniform("inputTexture", frameTexture, 0);
+            program.setFloatsUniform("uTexTransform", transformMatrix);
+            program.setFloatUniform("uHdrToneMap", hdrToneMappingEnabled ? 1f : 0f);
+            program.bindAttributesAndUniforms();
+        } catch (GlException | IOException e) {
+            Log.e(TAG, "Failed to bind passthrough shader program", e);
+            return;
+        }
+
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
+        checkGlError("FSR passthrough draw failed");
+    }
+
+    private GlProgram ensurePassthroughProgram() throws GlException, IOException {
+        if (passthroughProgram == null) {
+            passthroughProgram = new GlProgram(
+                    context,
+                    "fsr/2.0/opt_fsr_vertex.glsl",
+                    "fsr/2.0/passthrough_fragment.glsl"
+            );
+            passthroughProgram.setBufferAttribute(
+                    "aPosition",
+                    GlUtil.getNormalizedCoordinateBounds(),
+                    GlUtil.HOMOGENEOUS_COORDINATE_VECTOR_SIZE
+            );
+            passthroughProgram.setBufferAttribute(
+                    "aTexCoords",
+                    GlUtil.getTextureCoordinateBounds(),
+                    GlUtil.HOMOGENEOUS_COORDINATE_VECTOR_SIZE
+            );
+        }
+        return passthroughProgram;
+    }
+
+    private void resetPrograms() {
+        safeDeleteProgram(easuProgram);
+        easuProgram = null;
+
+        safeDeleteProgram(rcasProgram);
+        rcasProgram = null;
+
+        safeDeleteProgram(mobileProgram);
+        mobileProgram = null;
+
+        safeDeleteProgram(passthroughProgram);
+        passthroughProgram = null;
+
+        pipelineMode = PIPELINE_NONE;
+        activeShaderDir = "none";
+        needInputSize = true;
+        mobileHasSharpness = false;
+        mobileHasHdrToneMap = false;
+        twoPassFailureLogged = false;
+    }
+
+    private void fallbackToMobileSinglePass(String reason) {
+        if (pipelineMode != PIPELINE_TWO_PASS) {
+            return;
+        }
+        String failedShaderDir = activeShaderDir;
+        boolean failedNeedInputSize = needInputSize;
+        if (!twoPassFailureLogged) {
+            Log.w(TAG, "Switching pipeline from two-pass to mobile single-pass, reason=" + reason
+                    + ", shaderDir=" + activeShaderDir);
+            twoPassFailureLogged = true;
+        }
+        safeDeleteProgram(easuProgram);
+        easuProgram = null;
+        safeDeleteProgram(rcasProgram);
+        rcasProgram = null;
+        deleteFramebuffer();
+        pipelineMode = PIPELINE_NONE;
+        activeShaderDir = "none";
+
+        boolean failedHasMobileExtras = "fsr/2.0/".equals(failedShaderDir);
+        if (tryInitMobileSinglePass(
+                failedShaderDir,
+                failedNeedInputSize,
+                failedHasMobileExtras,
+                failedHasMobileExtras
+        )) {
+            return;
+        }
+        if (!"fsr/2.0/".equals(failedShaderDir)) {
+            tryInitMobileSinglePass("fsr/2.0/", true, true, true);
         }
     }
 
@@ -137,78 +588,34 @@ public class FsrVideoProcessor implements VideoProcessingGLSurfaceView.VideoProc
         }
     }
 
-    public void setHdrToneMappingEnabled(boolean enabled) {
-        hdrToneMapping = enabled;
+    private void logEffectiveSharpness(String reason) {
+        if (pipelineMode == PIPELINE_TWO_PASS) {
+            Log.i(
+                    TAG,
+                    "Effective sharpness [" + reason + "]: pipeline=two-pass, using rcasSharpness="
+                            + rcasSharpness + " (smaller is sharper)"
+            );
+            return;
+        }
+        if (pipelineMode == PIPELINE_MOBILE_SINGLE_PASS) {
+            Log.i(
+                    TAG,
+                    "Effective sharpness [" + reason + "]: pipeline=mobile-single-pass, using mobileSharpness="
+                            + mobileSharpness + " (larger is sharper)"
+            );
+            return;
+        }
+        Log.i(TAG, "Effective sharpness [" + reason + "]: pipeline=none");
     }
 
-    public void setSharpness(float value) {
-        manualSharpness = true;
-        manualSharpnessValue = Math.max(0f, Math.min(2f, value));
-    }
-
-    public void resetSharpness() {
-        manualSharpness = false;
-    }
-
-    /**
-     * 手动覆盖输出纹理尺寸（单位：像素），用于强制 shader 按目标分辨率进行采样。
-     * 传入 <=0 会恢复跟随 Surface 大小。
-     */
-    public void setOutputSizeOverride(int width, int height) {
-        if (width > 0 && height > 0) {
-            outputSizeOverridden = true;
-            overriddenOutputSize[0] = width;
-            overriddenOutputSize[1] = height;
-            Log.i(TAG, "Override FSR output size -> " + width + "x" + height);
-        } else {
-            outputSizeOverridden = false;
-            Log.i(TAG, "Reset FSR output size override");
+    private void safeDeleteProgram(@Nullable GlProgram program) {
+        if (program == null) {
+            return;
         }
-    }
-
-    private float[] resolveOutputSize() {
-        return outputSizeOverridden ? overriddenOutputSize : outputSize;
-    }
-
-    private float[] updateInputSize(int frameWidth, int frameHeight, float[] transformMatrix) {
-        if (frameWidth <= 0 || frameHeight <= 0) {
-            inputSize[0] = 0f;
-            inputSize[1] = 0f;
-            return inputSize;
+        try {
+            program.delete();
+        } catch (GlException e) {
+            Log.w(TAG, "Failed to delete GL program", e);
         }
-        float scaleX = 1f;
-        float scaleY = 1f;
-        if (transformMatrix != null && transformMatrix.length >= 16) {
-            scaleX = (float) Math.hypot(transformMatrix[0], transformMatrix[1]);
-            scaleY = (float) Math.hypot(transformMatrix[4], transformMatrix[5]);
-            if (scaleX == 0f) {
-                scaleX = 1f;
-            }
-            if (scaleY == 0f) {
-                scaleY = 1f;
-            }
-        }
-        inputSize[0] = frameWidth / scaleX;
-        inputSize[1] = frameHeight / scaleY;
-        if (!lastInputLogged && (scaleX != 1f || scaleY != 1f)) {
-            Log.i(TAG, "SurfaceTexture transform scale -> x:" + scaleX + " y:" + scaleY +
-                    ", effective input size:" + inputSize[0] + "x" + inputSize[1]);
-            lastInputLogged = true;
-        }
-        return inputSize;
-    }
-
-    private float resolveSharpness(@Nullable float[] sourceSize, float[] resolvedOutputSize) {
-        if (manualSharpness) {
-            return manualSharpnessValue;
-        }
-        if (sourceSize == null || sourceSize[0] <= 0f || sourceSize[1] <= 0f) {
-            return 1.2f;
-        }
-        float scaleX = resolvedOutputSize[0] > 0 ? resolvedOutputSize[0] / sourceSize[0] : 1f;
-        float scaleY = resolvedOutputSize[1] > 0 ? resolvedOutputSize[1] / sourceSize[1] : 1f;
-        float scale = Math.max(scaleX, scaleY);
-        float boost = Math.min(Math.max(scale - 1f, 0f), 1.5f);
-        return Math.min(2f, 1.0f + boost * 0.6f);
     }
 }

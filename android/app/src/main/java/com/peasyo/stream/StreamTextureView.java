@@ -27,6 +27,7 @@ import androidx.annotation.NonNull;
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.ReactContext;
 import com.facebook.react.bridge.ReadableMap;
+import com.facebook.react.bridge.ReadableType;
 import com.facebook.react.bridge.WritableMap;
 import com.peasyo.lib.*;
 import com.peasyo.log.LogManager;
@@ -83,6 +84,8 @@ public class StreamTextureView extends FrameLayout implements TextureView.Surfac
     private int rumbleIntensity;
     private boolean usbMode;
     private String usbController;
+    private String audioMode;
+    private String audioSharingMode;
     private boolean useSensor;
     private boolean sensorInvert;
     private int gyroscopeType;
@@ -93,6 +96,7 @@ public class StreamTextureView extends FrameLayout implements TextureView.Surfac
     private boolean swapDpad;
     private boolean logVerbose;
     private boolean isRightstickMoving;
+    private int framePacing;
     private int haptic_stable_threshold;
     private int haptic_change_threshold;
     private int haptic_diff_threshold;
@@ -107,6 +111,8 @@ public class StreamTextureView extends FrameLayout implements TextureView.Surfac
         this.rumbleIntensity = 3;
         this.usbMode = false;
         this.usbController = "Xbox360Controller";
+        this.audioMode = "AUTO";
+        this.audioSharingMode = "SHARED";
         this.useSensor = false;
         this.sensorInvert = false;
         this.gyroscopeType = 1;
@@ -117,6 +123,7 @@ public class StreamTextureView extends FrameLayout implements TextureView.Surfac
         this.swapDpad = false;
         this.logVerbose = false;
         this.isRightstickMoving = false;
+        this.framePacing = 0;
 
         // haptic
         this.haptic_stable_threshold = 3;
@@ -124,6 +131,37 @@ public class StreamTextureView extends FrameLayout implements TextureView.Surfac
         this.haptic_diff_threshold = 10;
 
         tracker = new OrientationTracker();
+    }
+
+    private static int parseFramePacing(ReadableMap streamInfo) {
+        if (!streamInfo.hasKey("framePacing")) {
+            return 0;
+        }
+
+        ReadableType type = streamInfo.getType("framePacing");
+        if (type == ReadableType.Number) {
+            int value = streamInfo.getInt("framePacing");
+            return (value >= 0 && value <= 3) ? value : 0;
+        }
+
+        if (type == ReadableType.String) {
+            String value = streamInfo.getString("framePacing");
+            if (value == null) {
+                return 0;
+            }
+            switch (value) {
+                case "1":
+                    return 1;
+                case "2":
+                    return 2;
+                case "3":
+                    return 3;
+                default:
+                    return 0;
+            }
+        }
+
+        return 0;
     }
 
     @Override
@@ -274,6 +312,8 @@ public class StreamTextureView extends FrameLayout implements TextureView.Surfac
         int rumbleIntensity = streamInfo.getInt("rumbleIntensity");
         boolean usbMode = streamInfo.getBoolean("usbMode");
         String usbController = streamInfo.getString("usbController");
+        String audioMode = streamInfo.hasKey("audioMode") ? streamInfo.getString("audioMode") : "AUTO";
+        String audioSharingMode = streamInfo.hasKey("audioSharingMode") ? streamInfo.getString("audioSharingMode") : "SHARED";
         String videoFormat = streamInfo.getString("videoFormat");
         boolean useSensor = streamInfo.getBoolean("useSensor");
         boolean sensorInvert = streamInfo.getBoolean("sensorInvert");
@@ -289,6 +329,7 @@ public class StreamTextureView extends FrameLayout implements TextureView.Surfac
         int hapticStableThreshold = streamInfo.getInt("hapticStableThreshold");
         int hapticChangeThreshold = streamInfo.getInt("hapticChangeThreshold");
         int hapticDiffThreshold = streamInfo.getInt("hapticDiffThreshold");
+        int framePacing = parseFramePacing(streamInfo);
 
         if (gamepadMaping != null) {
             updateButtonMapping(gamepadMaping);
@@ -298,6 +339,8 @@ public class StreamTextureView extends FrameLayout implements TextureView.Surfac
         this.rumbleIntensity = rumbleIntensity;
         this.usbMode = usbMode;
         this.usbController = usbController;
+        this.audioMode = audioMode == null ? "AUTO" : audioMode;
+        this.audioSharingMode = audioSharingMode == null ? "SHARED" : audioSharingMode;
         this.useSensor = useSensor;
         this.sensorInvert = sensorInvert;
         this.gyroscopeType = gyroscopeType;
@@ -309,6 +352,7 @@ public class StreamTextureView extends FrameLayout implements TextureView.Surfac
         this.haptic_stable_threshold = hapticStableThreshold;
         this.haptic_change_threshold = hapticChangeThreshold;
         this.haptic_diff_threshold = hapticDiffThreshold;
+        this.framePacing = framePacing;
 
         if (videoFormat != null) {
             if (videoFormat.isEmpty()) {
@@ -351,9 +395,12 @@ public class StreamTextureView extends FrameLayout implements TextureView.Surfac
                 this.rumbleIntensity,
                 this.usbMode,
                 this.usbController,
+                this.audioMode,
+                this.audioSharingMode,
                 this.haptic_stable_threshold,
                 this.haptic_change_threshold,
-                this.haptic_diff_threshold
+                this.haptic_diff_threshold,
+                this.framePacing
         );
 
         session.resume();
