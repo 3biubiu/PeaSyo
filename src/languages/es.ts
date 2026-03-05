@@ -116,7 +116,7 @@ export default {
     'Override native Xbox gamepad support':
       'Anular soporte nativo del gamepad de Xbox',
     bind_usb_device_description:
-      'Forzar el controlador USB de Peasyo para tomar control de todos los controladores compatibles / DualSense (experimental)',
+      'Forzar que el controlador USB de PeaSyo tome el control de todos los mandos Xbox/DualSense compatibles. Si estás usando un controlador DualSense 5, habilitar esta opción proporcionará retroalimentación háptica nativa.',
     bind_usb_device_tips:
       'Esta configuración solo se aplica a controladores que admiten el protocolo XInput o DualSense cuando están conectados por cable (OTG).',
     'Force Nexus/PS button to simulate touchpad':
@@ -197,6 +197,19 @@ export default {
       'Si no puedes abrir la página de inicio de sesión de PSN, puedes optar por iniciar sesión directamente con tu nombre de usuario de PSN o ID de cuenta base64.',
     Login_with_username: 'Iniciar sesión con nombre de usuario',
     Login_with_account_id: 'Iniciar sesión con ID de cuenta base64',
+    Login_issue: 'PROBLEM?',
+    ManualLogin_issue_tips:
+      'Si encuentras problemas al iniciar sesión en PSN, como "No se puede conectar al servidor" u otros errores extraños, puedes usar las siguientes soluciones:',
+    ManualLogin_local_stream_tips:
+      'Si solo necesitas transmisión local, no necesitas la verificación de inicio de sesión de PSN. Vuelve a Inicio y usa tu ID de PSN o nombre de usuario Base64.',
+    ManualLogin_manual_steps:
+      'Usa el inicio de sesión manual: toca el texto de abajo para abrir la página de inicio de sesión, o copia el enlace. Ábrelo en el navegador y, tras iniciar sesión, se redirigirá a una página de redirección.',
+    ManualLogin_open_link: 'Tocar para abrir',
+    ManualLogin_redirect_tips:
+      'Pega el enlace de redirección en el cuadro de abajo y luego toca Confirmar.',
+    ManualLogin_redirect_url_label: 'URL de redirección',
+    CopyLink: 'Copiar enlace',
+    Copied: 'Copiado',
     NoRegistry: 'Host no registrado, por favor regístrate',
     EmptyRegistry: 'Eliminar hosts registrados',
     'Login Successful': 'Inicio de sesión exitoso',
@@ -390,7 +403,8 @@ export default {
     WiFiPerformanceModeTitle: 'Modo de baja latencia WiFi (Experimental)',
     WiFiPerformanceModeDesc:
       'Habilitar este modo puede reducir la latencia de la conexión WiFi y mejorar la estabilidad, pero puede aumentar la latencia de la conexión Bluetooth.',
-    GamepadFeedbackIntervalTitle: 'Intervalo mínimo de entrada del gamepad (Tasa de refresco)',
+    GamepadFeedbackIntervalTitle:
+      'Intervalo mínimo de entrada del gamepad (Tasa de refresco)',
     GamepadFeedbackIntervalDesc:
       'Ajusta la frecuencia de envío de datos de entrada del gamepad. Mantiene el mecanismo adaptativo inteligente, solo configura el intervalo mínimo de actualización. Mayor frecuencia proporciona respuesta más rápida pero consume más recursos.',
     GamepadFeedbackIntervalUltra: 'Ultra (3ms)',
@@ -406,7 +420,7 @@ export default {
     History: 'History',
     HistoryTitle: 'Update histories',
     HistoryDesc: 'View update histories of PeaSyo',
-    FSRTitle: 'Super Resolución (AMD FSR 1.0) (Experimental)',
+    FSRTitle: 'Super Resolución (AMD FSR 1.0)',
     FSRDesc:
       'Habilitar la tecnología de super resolución AMD FSR 1.0, que es una función experimental que puede tener problemas de compatibilidad o estabilidad. Se recomienda usar en dispositivos de alto rendimiento (HDR no funciona)',
     frame_pacing_title: 'Ritmo de cuadros por segundo en video',

@@ -115,7 +115,7 @@ export default {
     'Override native Xbox gamepad support':
       'Override native Xbox gamepad support',
     bind_usb_device_description:
-      'Force Peasyo’s USB driver to take over all supported /DualSense controllers (experimental)',
+      "Force PeaSyo's USB driver to take over all supported Xbox/DualSense controllers. If you are using a DualSense 5 controller, enabling this option will provide native haptic feedback.",
     bind_usb_device_tips:
       'This setting only takes effect for controllers that support XInput or DualSense protocol when connected via wired (OTG).',
     'Force Nexus/PS button to simulate touchpad':
@@ -192,6 +192,19 @@ export default {
       'If you cannot open the PSN login page, you can choose to log in directly with your PSN username/account base64 ID below.',
     Login_with_username: 'Login with username',
     Login_with_account_id: 'Login with account base64 ID',
+    Login_issue: 'PROBLEM?',
+    ManualLogin_issue_tips:
+      'If you encounter login issues such as "Unable to connect to server" during PSN login, you can use the following solutions:',
+    ManualLogin_local_stream_tips:
+      'If you only need local streaming, PSN login verification is not required. Go back to Home and log in with your PSN ID or Base64 username.',
+    ManualLogin_manual_steps:
+      'Use manual login: tap the text below to open the login page, or copy the login link. Open it in your browser. After login, the browser will redirect to a redirect page.',
+    ManualLogin_open_link: 'Tap to open',
+    ManualLogin_redirect_tips:
+      'Paste the redirect link into the input box below, then tap Confirm.',
+    ManualLogin_redirect_url_label: 'Redirect URL',
+    CopyLink: 'Copy link',
+    Copied: 'Copied',
     NoRegistry: 'Host not registered, please register',
     EmptyRegistry: 'Clear registered hosts',
     'Login Successful': 'Login successful',
@@ -210,7 +223,7 @@ export default {
     RemoteHost: 'Remote address',
     WakeConsole: 'Wake up console',
     WakeDesc:
-      'If the console is in sleep mode, do you want to wake it up? Waking up takes about one minute.',
+      'If the console is in sleep mode, you want to wake it up. Waking up takes about one minute.',
     OnlyConnect: 'Connect only',
     WakeAndConnect: 'Wake and connect',
     Waking: 'Waking...',
@@ -395,9 +408,9 @@ export default {
     History: 'History',
     HistoryTitle: 'Update histories',
     HistoryDesc: 'View update histories of PeaSyo',
-    FSRTitle: 'Super Resolution (AMD FSR 1.0) (Experimental)',
+    FSRTitle: 'Super Resolution (AMD FSR 1.0)',
     FSRDesc:
-      'Enable AMD FSR 1.0 super resolution technology, which is an experimental feature that may have compatibility or stability issues. It is recommended for use on high-performance devices(HDR is not working)',
+      'Enable AMD FSR 1.0 super resolution technology, which is an experimental feature that may have compatibility or stability issues. It is recommended for use on high-performance devices(HDR is not working temporarly)',
     frame_pacing_title: 'Video frame pacing',
     frame_pacing_desc: 'Specify how to balance video latency and smoothness',
     latency: 'Prefer lowest latency',

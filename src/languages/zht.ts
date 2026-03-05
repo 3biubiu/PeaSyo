@@ -43,6 +43,7 @@ export default {
     Options: '操作',
     // APP
     Login: '登录',
+    'Manual Login': '手動登錄',
     Registry: '注册',
     Transfer: '转移',
     Custom: '自定义',
@@ -114,7 +115,7 @@ export default {
     RumbleDesc: '如果手柄支持振動，可以設置遊戲中是否振動',
     'Override native gamepad support': '覆蓋安卓手柄支持',
     bind_usb_device_description:
-      '強制Peasyo的USB驅動接管所有受支持的Xbox/DualSense手柄',
+      '強制PeaSyo的USB驅動接管所有受支援的Xbox/DualSense手把，若你正在使用DualSense 5控制器，開啟此選項後可獲得原生觸覺反饋',
     bind_usb_device_tips:
       '該設置只有支持Xinput或DualSense協議的手柄有線連接（OTG）才生效。',
     'Force Nexus/PS button to simulate touchpad': '強制西瓜鍵/音量鍵模擬觸控板',
@@ -193,6 +194,19 @@ export default {
       '如果你無法打開PSN登錄頁面，可以選擇使用PSN用戶名或賬號base64 ID直接登錄。',
     Login_with_username: '用戶名登錄',
     Login_with_account_id: '賬號base64 ID登錄',
+    Login_issue: '無法登錄?',
+    ManualLogin_issue_tips:
+      '如果你在進行 PSN 登錄時遇到如「無法連接伺服器」或其他奇怪的登錄問題，你可以使用以下解決方案：',
+    ManualLogin_local_stream_tips:
+      '如果你只需要本地串流，你無需經過 PSN 登錄驗證，返回首頁使用 PSN ID 或 Base64 用戶名登錄即可。',
+    ManualLogin_manual_steps:
+      '使用手動登錄，點擊下方文字跳轉或複製登錄連結，打開瀏覽器輸入連結，在瀏覽器端完成登錄後會跳轉至一個重定向頁面。',
+    ManualLogin_open_link: '點擊跳轉',
+    ManualLogin_redirect_tips:
+      '將重定向連結輸入到下方輸入框，最後點擊確認按鈕。',
+    ManualLogin_redirect_url_label: '重定向 URL',
+    CopyLink: '複製連結',
+    Copied: '已複製',
     NoRegistry: '尚未註冊主機，請註冊',
     EmptyRegistry: '清空註冊主機',
     'Login Successful': '登錄成功',
@@ -409,9 +423,9 @@ export default {
     History: '更新日志',
     HistoryTitle: '更新日志',
     HistoryDesc: '查看PeaSyo历史更新日志',
-    FSRTitle: '超解析度(AMD FSR 1.0)(實驗性)',
+    FSRTitle: '超解析度(AMD FSR 1.0)',
     FSRDesc:
-      '啟用AMD FSR 1.0超解析度技術，該功能為實驗性功能可能會有相容性或穩定性問題，建議在高性能設備上使用(无法使用HDR)',
+      '啟用AMD FSR 1.0超解析度技術，該功能為實驗性功能可能會有相容性或穩定性問題，建議在高性能設備上使用(暂无法使用HDR)',
     frame_pacing_title: '視訊影格調步',
     frame_pacing_desc: '指定如何平衡視訊延遲和平滑度',
     latency: '偏好低延遲',

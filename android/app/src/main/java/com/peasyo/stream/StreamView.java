@@ -878,9 +878,9 @@ public class StreamView extends FrameLayout {
             session.setControllerState(controllerState);
 
             if(
-                controllerState.getButtons() == 0 && controllerState.getL2State() == 0 && controllerState.getR2State() == 0 &&
-                controllerState.getLeftX() == 0 && controllerState.getLeftY() == 0 &&
-                controllerState.getRightX() == 0 && controllerState.getRightY() == 0
+                    controllerState.getButtons() == 0 && controllerState.getL2State() == 0 && controllerState.getR2State() == 0 &&
+                            controllerState.getLeftX() == 0 && controllerState.getLeftY() == 0 &&
+                            controllerState.getRightX() == 0 && controllerState.getRightY() == 0
             ) {
                 // 延迟500ms，确认都归零后重发一次重置，保证按键可靠性
                 delayedStateSend = new Runnable() {
